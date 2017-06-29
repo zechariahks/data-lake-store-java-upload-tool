@@ -1,9 +1,9 @@
 package com.starbucks.analytics.eventhub
 
-class Event(fileName: String, sharedAccessSignatureToken: String) {
+class Event(uri: String, sharedAccessSignatureToken: String) {
   def toJson: String =
     s"""{
-       |    fileName: $fileName,
+       |    uri: $uri,
        |    sharedAccessSignatureToken: $sharedAccessSignatureToken
        |}
      """.stripMargin

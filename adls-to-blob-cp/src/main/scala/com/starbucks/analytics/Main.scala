@@ -2,22 +2,22 @@ package com.starbucks.analytics
 
 import com.microsoft.azure.datalake.store.ADLFileInputStream
 import com.microsoft.azure.storage.blob.CloudBlockBlob
-import com.starbucks.analytics.adls.{ ADLSConnectionInfo, ADLSManager }
-import com.starbucks.analytics.blob.{ BlobConnectionInfo, BlobManager }
-import com.starbucks.analytics.eventhub.{ Event, EventHubConnectionInfo, EventHubManager }
+import com.starbucks.analytics.adls.{ADLSConnectionInfo, ADLSManager}
+import com.starbucks.analytics.blob.{BlobConnectionInfo, BlobManager}
+import com.starbucks.analytics.eventhub.{Event, EventHubConnectionInfo, EventHubManager}
 import com.typesafe.scalalogging.Logger
 
 import scala.collection.mutable
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.collection.parallel.mutable.ParSeq
-import scala.util.{ Failure, Success, Try }
+import scala.util.{Failure, Success, Try}
 
 /**
  * Entry point for the application
  */
 object Main {
   val logger = Logger("Main")
-  var successMap = new mutable.LinkedHashMap[String, (Boolean, Option[String])]()
+  var successMap = new mutable.LinkedHashMap[String, (Boolean, Option[(String, String)])]()
 
   /**
    * Entry point
@@ -68,13 +68,13 @@ object Main {
       .foreach(file => {
         logger.info(s"Operating on source file $file" +
           s" in Azure Data Lake Store ${adlsConnectionInfo.accountFQDN}")
-        val success: (Boolean, Option[String]) = upload(
+        val result: (Boolean, Option[(String, String)]) = upload(
           adlsConnectionInfo,
           blobConnectionInfo,
           conf,
           file
         )
-        successMap += (file -> success)
+        successMap += (file -> result)
       })
 
     // Validate the results
@@ -91,8 +91,8 @@ object Main {
       // Publish the events to the event hub
       val eventsToPublish = successMap.map(x =>
         new Event(
-          fileName = x._1,
-          sharedAccessSignatureToken = x._2._2.get
+          uri = x._2._2.get._1,
+          sharedAccessSignatureToken = x._2._2.get._2
         )).toList
       EventHubManager.publishEvents(
         eventHubConnectionInfo,
@@ -127,9 +127,9 @@ object Main {
     blobConnectionInfo: BlobConnectionInfo,
     conf:               Conf,
     sourceFile:         String
-  ): (Boolean, Option[String]) = {
+  ): (Boolean, Option[(String, String)]) = {
     var success = false
-    var token: Option[String] = None
+    var uriAndToken: Option[(String, String)] = None
     BlobManager.getBlockBlobReference(
       blobConnectionInfo,
       conf.blobStoreContainerName(),
@@ -143,16 +143,16 @@ object Main {
           success = false
         }
         case Success(blockBlobReference: CloudBlockBlob) => {
-          def fn(stream: ADLFileInputStream) = {
-            var data = Array.fill[Byte](conf.desiredBufferSize() * 1000000)(0)
-            while (stream.read(data) != -1) {
-              blockBlobReference.uploadFromByteArray(
-                data,
-                0,
-                data.length
-              )
+            def fn(stream: ADLFileInputStream) = {
+              var data = Array.fill[Byte](conf.desiredBufferSize() * 1000000)(0)
+              while (stream.read(data) != -1) {
+                blockBlobReference.uploadFromByteArray(
+                  data,
+                  0,
+                  data.length
+                )
+              }
             }
-          }
           ADLSManager.withAzureDataLakeStoreFileStream[Boolean](
             adlsConnectionInfo,
             sourceFile,
@@ -178,8 +178,8 @@ object Main {
                       s" ${conf.blobStoreContainerName} in storage account " +
                       s" ${blobConnectionInfo.accountName}. Exception: $exception")
                     success = false
-                  case Success(signatureToken) =>
-                    token = Some(signatureToken)
+                  case Success(result) =>
+                    uriAndToken = Some((result._1, result._2))
                     success = true
                 }
               } else {
@@ -189,7 +189,7 @@ object Main {
         }
       }
 
-    (success, token)
+    (success, uriAndToken)
   }
 
   /**
@@ -206,9 +206,9 @@ object Main {
     // Set up the source structure that this tool needs to
     // operate on
     var listOfFiles = new mutable.ListBuffer[String]()
-    val sourceFolder: String = conf.sourceFolder.getOrElse("/")
+    val sourceFolder: String = conf.sourceFolder.getOrElse("")
     if (conf.sourceFile.isSupplied) {
-      listOfFiles += s"$sourceFolder${conf.sourceFile()}"
+      listOfFiles += s"$sourceFolder/${conf.sourceFile()}"
     } else {
       // Based on configuration setup, we should have got
       // a folder if the file is not specified
