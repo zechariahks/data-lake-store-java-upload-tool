@@ -2,15 +2,15 @@ package com.starbucks.analytics
 
 import com.microsoft.azure.datalake.store.ADLFileInputStream
 import com.microsoft.azure.storage.blob.CloudBlockBlob
-import com.starbucks.analytics.adls.{ADLSConnectionInfo, ADLSManager}
-import com.starbucks.analytics.blob.{BlobConnectionInfo, BlobManager}
-import com.starbucks.analytics.eventhub.{Event, EventHubConnectionInfo, EventHubManager}
+import com.starbucks.analytics.adls.{ ADLSConnectionInfo, ADLSManager }
+import com.starbucks.analytics.blob.{ BlobConnectionInfo, BlobManager }
+import com.starbucks.analytics.eventhub.{ Event, EventHubConnectionInfo, EventHubManager }
 import com.typesafe.scalalogging.Logger
 
 import scala.collection.mutable
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.collection.parallel.mutable.ParSeq
-import scala.util.{Failure, Success, Try}
+import scala.util.{ Failure, Success, Try }
 
 /**
  * Entry point for the application
@@ -143,16 +143,16 @@ object Main {
           success = false
         }
         case Success(blockBlobReference: CloudBlockBlob) => {
-            def fn(stream: ADLFileInputStream) = {
-              var data = Array.fill[Byte](conf.desiredBufferSize() * 1000000)(0)
-              while (stream.read(data) != -1) {
-                blockBlobReference.uploadFromByteArray(
-                  data,
-                  0,
-                  data.length
-                )
-              }
+          def fn(stream: ADLFileInputStream) = {
+            var data = Array.fill[Byte](conf.desiredBufferSize() * 1000000)(0)
+            while (stream.read(data) != -1) {
+              blockBlobReference.uploadFromByteArray(
+                data,
+                0,
+                data.length
+              )
             }
+          }
           ADLSManager.withAzureDataLakeStoreFileStream[Boolean](
             adlsConnectionInfo,
             sourceFile,
