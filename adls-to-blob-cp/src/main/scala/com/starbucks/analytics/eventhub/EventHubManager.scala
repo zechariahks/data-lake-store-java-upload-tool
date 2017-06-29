@@ -5,6 +5,7 @@ import com.microsoft.azure.servicebus.ConnectionStringBuilder
 import com.typesafe.scalalogging.Logger
 
 import scala.util.Try
+import scala.util.control.Breaks._
 
 /**
  * Manages all the Azure Event Hub operations
@@ -46,17 +47,33 @@ object EventHubManager {
   def publishEvents(
     connectionInfo: EventHubConnectionInfo,
     events:         List[Event]
-  ): Unit = {
-      def fn(eventHubClient: EventHubClient): Unit = {
-        events.foreach(event => {
-          logger.debug(s"Publishing event ${event.toJson}" +
-            s" to event hub ${connectionInfo.eventHubNamespaceName}/" +
-            s" ${connectionInfo.eventHubName}")
-          val eventData = new EventData(event.toJson.getBytes("UTF-8"))
-          eventHubClient.sendSync(eventData)
-        })
+  ): Try[Boolean] = {
+      def fn(eventHubClient: EventHubClient): Boolean = {
+        var success = false
+        breakable {
+          events.foreach(event => {
+            logger.debug(s"Publishing event ${event.toJson}" +
+              s" to event hub ${connectionInfo.eventHubNamespaceName}/" +
+              s" ${connectionInfo.eventHubName}")
+            val eventData = new EventData(event.toJson.getBytes("UTF-8"))
+            try {
+              eventHubClient.sendSync(eventData)
+              success = true
+            } catch {
+              case ex: Exception => {
+                logger.error(s"Publishing event ${event.toJson}" +
+                  s" to event hub ${connectionInfo.eventHubNamespaceName}/" +
+                  s" ${connectionInfo.eventHubName} failed with exception" +
+                  s" $ex")
+                success = false
+                break()
+              }
+            }
+          })
+        }
+        success
       }
-    withAzureEventHubClient[Unit](
+    withAzureEventHubClient[Boolean](
       connectionInfo,
       fn
     )

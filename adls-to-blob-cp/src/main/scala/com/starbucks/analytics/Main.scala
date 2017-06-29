@@ -1,14 +1,11 @@
 package com.starbucks.analytics
 
-import java.util
-
 import com.microsoft.azure.datalake.store.ADLFileInputStream
-import com.microsoft.azure.storage.blob.{CloudBlockBlob, SharedAccessBlobPermissions, SharedAccessBlobPolicy}
+import com.microsoft.azure.storage.blob.CloudBlockBlob
 import com.starbucks.analytics.adls.{ADLSConnectionInfo, ADLSManager}
 import com.starbucks.analytics.blob.{BlobConnectionInfo, BlobManager}
 import com.starbucks.analytics.eventhub.{Event, EventHubConnectionInfo, EventHubManager}
 import com.typesafe.scalalogging.Logger
-import org.joda.time.{DateTime, DateTimeZone}
 
 import scala.collection.mutable
 import scala.collection.parallel.ForkJoinTaskSupport
@@ -81,6 +78,7 @@ object Main {
       })
 
     // Validate the results
+    // and publish events to event hub
     if (successMap.exists((x) => !x._2._1)) {
       logger.error(s"Failed uploading the following files:" +
         s" ${successMap.filter((x) => !x._2._1).mkString("\n")}")
@@ -89,6 +87,7 @@ object Main {
       logger.info(s"Succeeded uploading the files: " +
         s" ${successMap.keys.mkString("\n")}")
 
+      logger.info("Publishing events to the event hub.")
       // Publish the events to the event hub
       val eventsToPublish = successMap.map(x =>
         new Event(
@@ -98,8 +97,20 @@ object Main {
       EventHubManager.publishEvents(
         eventHubConnectionInfo,
         eventsToPublish
-      )
+      ) match {
+        case Failure(exception) =>
+          logger.error(s"Publishing events to the event hub failed" +
+            s" with exception $exception")
+          System.exit(-1)
+        case Success(success) =>
+          if (success)
+            logger.info("Successfully published all events to the event hub")
+          else
+            logger.error("Failed to upload one or more events")
+      }
     }
+    logger.info(s"Completed execution")
+    System.exit(0)
   }
 
   /**
