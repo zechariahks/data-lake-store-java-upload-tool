@@ -13,7 +13,7 @@ import org.joda.time.{DateTime, DateTimeZone}
 import scala.collection.mutable
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.collection.parallel.mutable.ParSeq
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Entry point for the application
@@ -154,27 +154,26 @@ object Main {
                 s" Exception: $exception")
               success = false
             case Success(value) =>
-              // Set the expiry time and permissions for the blob.
-              // In this case, the start time is specified as a few minutes in the past, to mitigate clock skew.
-              // The shared access signature will be valid immediately.
-              val sasConstraints = new SharedAccessBlobPolicy()
-              sasConstraints.setSharedAccessStartTime(
-                new DateTime(DateTimeZone.UTC)
-                .plusMinutes(-5)
-                .toDate
-              )
-              sasConstraints.setSharedAccessExpiryTime(
-                new DateTime(DateTimeZone.UTC)
-                .plusMinutes(conf.tokenExpiration())
-                .toDate
-              )
-              sasConstraints.setPermissions(util.EnumSet.of(SharedAccessBlobPermissions.READ))
-              val sasToken: String = blockBlobReference.generateSharedAccessSignature(
-                sasConstraints,
-                null
-              )
-              token = Some(sasToken)
-              success = value
+              if (value) {
+                logger.info(s"Trying to generate shared access signature for block blob" +
+                  s" $sourceFile in containers ${conf.blobStoreContainerName}")
+                Try(BlobManager.getSharedAccessSignatureToken(
+                  blockBlobReference,
+                  conf.tokenExpiration()
+                )) match {
+                  case Failure(exception) =>
+                    logger.error(s"Error getting a shared access signature token" +
+                      s" for block blob $sourceFile in container" +
+                      s" ${conf.blobStoreContainerName} in storage account " +
+                      s" ${blobConnectionInfo.accountName}. Exception: $exception")
+                    success = false
+                  case Success(signatureToken) =>
+                    token = Some(signatureToken)
+                    success = true
+                }
+              } else {
+                success = false
+              }
           }
         }
       }
