@@ -19,7 +19,7 @@ import scala.util.{Failure, Success}
 /**
   * Event Processor to process all the events received from Event Hub.
   */
-class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName: String, s3FolderName: String) extends IEventProcessor{
+class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName: String, s3FolderName: String, desiredParallelism: Int) extends IEventProcessor{
 
   private val logger = Logger("EventProcessor")
   private var checkpointBatchingCount = 0
@@ -83,7 +83,7 @@ class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName:
       }
       val parallelListofEvents: ParSeq[Event] = eventsList.par
       parallelListofEvents.tasksupport = new ForkJoinTaskSupport(
-        new scala.concurrent.forkjoin.ForkJoinPool(1)
+        new scala.concurrent.forkjoin.ForkJoinPool(desiredParallelism)
       )
       parallelListofEvents.foreach(event => {
         logger.info(s"Start copying for file ${event.getUri}")

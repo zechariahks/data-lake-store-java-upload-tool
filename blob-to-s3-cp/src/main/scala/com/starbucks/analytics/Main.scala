@@ -54,7 +54,7 @@ object Main {
         val options = new EventProcessorOptions
         options.setExceptionNotification(new EventHubErrorNotificationHandler)
         try{
-          eventProcessorHost.registerEventProcessorFactory(new EventProcessorFactory(s3ConnectionInfo), options)
+          eventProcessorHost.registerEventProcessorFactory(new EventProcessorFactory(s3ConnectionInfo, conf.desiredParallelism()), options)
         }catch {
           case e: ExecutionException => {
             logger.error(e.getCause.toString)
