@@ -9,8 +9,11 @@ package com.starbucks.analytics.eventhub
  * @param sasKey Shared Access Signature key
  */
 case class EventHubConnectionInfo(
-  eventHubNamespaceName: String,
-  eventHubName:          String,
-  sasKeyName:            String,
-  sasKey:                String
-)
+                                  eventHubNamespaceName: String,
+                                  eventHubName:          String,
+                                  sasKeyName:            String,
+                                  sasKey:                String,
+                                  eventProcessorName:    String,
+                                  eventProcessorStorageContainer: String,
+                                  consumerGroup:         String
+                                 )

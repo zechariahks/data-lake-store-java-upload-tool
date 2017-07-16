@@ -1,103 +1,84 @@
 package com.starbucks.analytics
 
-import java.io.ByteArrayInputStream
-import java.util.concurrent.TimeUnit
-import javax.sound.midi.Receiver
-
-import com.amazonaws.auth.{AWSCredentials, BasicAWSCredentials}
-import com.amazonaws.services.s3.model.{ObjectMetadata, PutObjectRequest}
-import com.amazonaws.services.s3.{AmazonS3, AmazonS3Client}
-import com.microsoft.azure.eventhubs.{EventHubClient, PartitionReceiver}
 import com.microsoft.azure.eventprocessorhost.{EventProcessorHost, EventProcessorOptions}
-import com.microsoft.azure.servicebus.ConnectionStringBuilder
 import com.starbucks.analytics.blob.BlobConnectionInfo
-import com.starbucks.analytics.eventhub.{EventHubConnectionInfo, EventHubErrorNotificationHandler, EventHubManager, EventProcessor}
+import com.starbucks.analytics.eventhub._
 import com.starbucks.analytics.s3.S3ConnectionInfo
-
+import com.typesafe.scalalogging.Logger
 import scala.concurrent.ExecutionException
-import scala.util.Try
+import scala.util.{Failure, Success}
 
 
 /**
-  * Created by depatel on 7/10/17.
+  * Main class to start file transfer from Azure blob to AWS S3.
   */
 object Main {
+  private val logger: Logger = Logger("Main")
 
+  /**
+    * Entry point
+    * @param args Command line arguments
+    */
   def main(args: Array[String]): Unit = {
+    val conf = new s3cpConf(args)
+    logger.info(conf.summary)
 
     //Setup Azure EventHub Connection
     val eventHubConnectionInfo = EventHubConnectionInfo(
-      eventHubNamespaceName = "",
-      eventHubName = "",
-      sasKeyName = "",
-      sasKey = ""
+           eventHubNamespaceName = conf.eventHubNamespaceName(),
+          eventHubName = conf.eventHubName(),
+         sasKeyName = conf.eventHubSASKeyName(),
+          sasKey = conf.eventHubSASKey(),
+          eventProcessorName = conf.eventProcessorName(),
+          eventProcessorStorageContainer = conf.eventProcessorStorageContainer(),
+          consumerGroup = conf.eventHubConsumerGroup()
     )
 
-    //Create EventHubProcessorHost to process the eventdata from event hub.
-    val eventHubNamespaceName: String = "dpeventhubdemo"
-    val eventHubName: String = "dpeventhubtest"
-    val sasKeyName: String = "dpeventhubsas"
-    val sasKey: String = "hcVwTZRAZKrW1GioqCqskcuQg21lam+rS9XV0Ud1q30="
-    val storageAccountName: String = "dpeventhubdemostorage"
-    val storageAccountKey: String = "9Vliyoma1P6GsIYf4q3BwLW3vwLoFor5qPHuQJsZPIGbigWMroiY+a6aG7b6Q4PyBefnBXsl9l16inGtHZAMFA=="
-    //val storageConnectionString: String = "DefaultEndpointsProtocol=https;AccountName=" + storageAccountName + ";AccountKey=" + storageAccountKey
-    val storageConnectionString: String = "DefaultEndpointsProtocol=https;AccountName=dpeventhubdemostorage;AccountKey=9Vliyoma1P6GsIYf4q3BwLW3vwLoFor5qPHuQJsZPIGbigWMroiY+a6aG7b6Q4PyBefnBXsl9l16inGtHZAMFA==;EndpointSuffix=core.windows.net"
-    val eventHubConnectionString = new ConnectionStringBuilder(eventHubNamespaceName, eventHubName, sasKeyName, sasKey)
-    val host = new EventProcessorHost("simpleeventhubproc",eventHubName, "$Default",eventHubConnectionString.toString, storageConnectionString, "depateleventhubprocstorage")
-    println(s"Registering host named ${host.getHostName}")
+    //Setup AWS S3 Connection
+    val s3ConnectionInfo = S3ConnectionInfo(
+      awsAccessKeyID = conf.awsAccessKeyID(),
+      awsSecretAccessKey = conf.awsSecretAccessKey(),
+      s3BucketName = conf.s3BucketName(),
+      s3FolderName = conf.s3FolderName()
+    )
 
-    val options = new EventProcessorOptions
-    options.setExceptionNotification(new EventHubErrorNotificationHandler)
-    options.getReceiveTimeOut
-    try{
-      println("before")
-      host.registerEventProcessor(classOf[EventProcessor], options).get()
-      println("after")
-    }
-    catch {
-      case e: ExecutionException => {
-        println(e.getCause.toString)
+    //Setup Azure Storage connection for EventProcessor.
+    val blobConnectionInfo = BlobConnectionInfo (
+      accountName = conf.eventHubStorageAccountName(),
+      accountKey = conf.eventHubStorageAccountKey()
+    )
+
+    EventHubManager.getEventProcessorHost(eventHubConnectionInfo, blobConnectionInfo) match {
+      case Failure(e) => println(e)
+      case Success(eventProcessorHost) => {
+        val options = new EventProcessorOptions
+        options.setExceptionNotification(new EventHubErrorNotificationHandler)
+        try{
+          eventProcessorHost.registerEventProcessorFactory(new EventProcessorFactory(s3ConnectionInfo), options)
+        }catch {
+          case e: ExecutionException => {
+            logger.error(e.getCause.toString)
+          }
+          case e: Exception => {
+            logger.error(e.getCause.toString)
+          }
+        }
+        // SIGNAL LISTENER TO GRACEFULLY TERMINATE EVENT PROCESSOR.
+        println("Press any key to stop: ")
+        try{
+          System.in.read()
+          eventProcessorHost.unregisterEventProcessor()
+          logger.warn("Calling forceExecutorShutdown")
+          EventProcessorHost.setAutoExecutorShutdown(true)
+          logger.info("EventProcessorHost existed gracefully!")
+        }catch {
+          case e: Exception => {
+            logger.error(e.getCause.toString)
+            System.exit(1)
+          }
+        }
       }
-      case e: Exception => {
-        println(e.toString)
-      }
     }
-
-    println("Press any key to stop: ")
-    try{
-      System.in.read()
-      host.unregisterEventProcessor()
-      println("Calling forceExecutorShutdown")
-      EventProcessorHost.forceExecutorShutdown(120)
-    }catch {
-      case e: Exception => {
-        println(e.toString)
-        e.printStackTrace()
-      }
-    }
-    //Setup Azure Blob Store Connection
-//    val blobStoreConnectionInfo = BlobConnectionInfo(
-//      accountName = "",
-//      accountKey = ""
-//    )
-//
-//    //Setup s3 Connection
-//    val s3ConnectionInfo = S3ConnectionInfo(
-//      awsAccessKey = "",
-//      awsSecretAccessKey = ""
-//    )
-//
-//    //Setup AWS Credentials
-//    val awsCredentials: AWSCredentials = new BasicAWSCredentials(s3ConnectionInfo.awsAccessKey, s3ConnectionInfo.awsSecretAccessKey)
-//
-//    //Create AWS S3 Client
-//    val s3Client: AmazonS3 = new AmazonS3Client(awsCredentials)
-//    //Create a bucket or get list of the available bucket.
-//    //Currently just create a bucket.
-//    val s3BucketName = "sample-blob-upload-test"
-//    s3Client.createBucket(s3BucketName)
-//
-
-
+    System.exit(0)
   }
 }

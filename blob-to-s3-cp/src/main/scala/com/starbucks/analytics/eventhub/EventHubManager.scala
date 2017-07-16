@@ -4,8 +4,9 @@ package com.starbucks.analytics.eventhub
 import java.util.function.Consumer
 
 import com.microsoft.azure.eventhubs.{EventData, EventHubClient}
-import com.microsoft.azure.eventprocessorhost.ExceptionReceivedEventArgs
+import com.microsoft.azure.eventprocessorhost.{EventProcessorHost, ExceptionReceivedEventArgs}
 import com.microsoft.azure.servicebus.ConnectionStringBuilder
+import com.starbucks.analytics.blob.BlobConnectionInfo
 import com.typesafe.scalalogging.Logger
 
 import scala.util.Try
@@ -82,5 +83,19 @@ object EventHubManager {
       connectionInfo,
       fn
     )
+  }
+
+  /**
+    * Method to get Azure EventProcessorHost.
+    * @param eventHubConnectionInfo Azure event hub connection information case class.
+    * @param blobConnectionInfo Azure blob storage connection information case class.
+    * @return
+    */
+  def getEventProcessorHost(eventHubConnectionInfo: EventHubConnectionInfo, blobConnectionInfo: BlobConnectionInfo): Try[EventProcessorHost] ={
+    val storageConnectionString: String = s"DefaultEndpointsProtocol=https;AccountName=${blobConnectionInfo.accountName};AccountKey=${blobConnectionInfo.accountKey};EndpointSuffix=core.windows.net"
+    val eventHubConnectionString = new ConnectionStringBuilder(eventHubConnectionInfo.eventHubNamespaceName, eventHubConnectionInfo.eventHubName, eventHubConnectionInfo.sasKeyName, eventHubConnectionInfo.sasKey)
+    Try(new EventProcessorHost(eventHubConnectionInfo.eventProcessorName, eventHubConnectionInfo.eventHubName,
+      eventHubConnectionInfo.consumerGroup, eventHubConnectionString.toString,
+      storageConnectionString, eventHubConnectionInfo.eventProcessorStorageContainer))
   }
 }

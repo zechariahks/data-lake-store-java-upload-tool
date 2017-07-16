@@ -8,8 +8,8 @@ import com.microsoft.azure.storage.blob._
 import com.microsoft.azure.storage.{AccessCondition, CloudStorageAccount, OperationContext}
 import com.typesafe.scalalogging.Logger
 import org.joda.time.{DateTime, DateTimeZone}
-
-import scala.util.Try
+import scala.collection.JavaConverters._
+import scala.util.{Success, Try, Failure}
 
 /**
  * Manages all the Azure Blob Store operations
@@ -130,21 +130,22 @@ object BlobManager {
     (blockBlobReference.getStorageUri.toString, sasToken)
   }
 
-  // method to open an input stream for the specified file from blob.
-  def readBlob(
-               sasUri:  String
-              ): ByteArrayOutputStream  ={
-    val azureBlob: CloudBlockBlob = new CloudBlockBlob(new URI(sasUri))
-
-    try{
-      val blobRequestOptions = new BlobRequestOptions()
-      val operationContext = new OperationContext()
-      blobRequestOptions.setConcurrentRequestCount(100)
-      operationContext.setLoggingEnabled(true)
-      val ioStream = new ByteArrayOutputStream()
-//      val blobInputStream:BlobInputStream = new BlobInputStream(azureBlob, null, blobRequestOptions, operationContext)
-      azureBlob.download(ioStream, null, blobRequestOptions, operationContext)
-      ioStream
-    }
+  // Method to return a blobReference for the given SAS URI.
+  def withSASUriBlobReference[R]( sasUri: String,
+                        f: CloudBlockBlob => R): Try[R] ={
+    val azureBlockBlob = new CloudBlockBlob(new URI(sasUri))
+    Try(f(azureBlockBlob))
   }
+
+
+  // method to open an input stream for the specified file from blob.
+  // try to convert it into the loaning pattern with a new blob provider method in the blob manager.
+  def readBlob( azureBlob: CloudBlockBlob): BlobInputStream  = {
+    val blobRequestOptions = new BlobRequestOptions()
+    val operationContext = new OperationContext()
+    blobRequestOptions.setConcurrentRequestCount(100)
+    operationContext.setLoggingEnabled(true)
+    azureBlob.openInputStream()
+  }
+
 }

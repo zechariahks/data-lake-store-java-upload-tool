@@ -1,90 +1,128 @@
 package com.starbucks.analytics.eventhub
 
 import java.lang
-
-import scala.collection.JavaConverters._
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.services.s3.AmazonS3Client
 import com.google.gson.Gson
 import com.microsoft.azure.eventhubs.EventData
 import com.microsoft.azure.eventprocessorhost.{CloseReason, IEventProcessor, PartitionContext}
-import com.microsoft.azure.storage.blob.BlobInputStream
+import com.microsoft.azure.storage.OperationContext
+import com.microsoft.azure.storage.blob.{BlobInputStream, BlobRequestOptions, CloudBlockBlob}
 import com.starbucks.analytics.blob.BlobManager
+import com.starbucks.analytics.s3.S3Manger
 import com.typesafe.scalalogging.Logger
-
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.parallel.{ForkJoinTaskSupport, ParSeq}
+import scala.util.{Failure, Success}
 
 /**
-  * Created by depatel on 7/10/17.
+  * Event Processor to process all the events received from Event Hub.
   */
-class EventProcessor extends IEventProcessor{
+class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName: String, s3FolderName: String) extends IEventProcessor{
 
   private val logger = Logger("EventProcessor")
-
   private var checkpointBatchingCount = 0
+  private val aWSCredentials = new BasicAWSCredentials(awsAccessKeyId, awsSecretKey)
+  private val s3Client = new AmazonS3Client(aWSCredentials)
 
-  println("Now creating the eventhub processor host instance.")
   def toEvent(eventString: String) = new Gson().fromJson(eventString, classOf[Event])
 
+  /**
+    * Method invoked at the time of event processor registration.
+    * @param context
+    * @throws java.lang.Exception
+    */
   @throws(classOf[Exception])
   override def onOpen(context: PartitionContext): Unit = {
-    println(s"Partition ${context.getPartitionId} is opening.")
+    logger.info(s"Partition ${context.getPartitionId} is opening.")
   }
 
+  /**
+    * Method invoked when event processor un-registration.
+    * @param context
+    * @param reason
+    * @throws java.lang.Exception
+    */
   @throws(classOf[Exception])
   override def onClose(context: PartitionContext, reason: CloseReason): Unit = {
-    println(s"Partition ${context.getPartitionId} is closing.")
+    logger.info(s"Partition ${context.getPartitionId} is closing.")
   }
 
+  /**
+    * Method to invoke when error is thrown from event processor host.
+    * @param context
+    * @param error
+    */
   override def onError(context: PartitionContext, error: Throwable): Unit = {
-    println(s"Partition ${context.getPartitionId} on Error: ${error.toString}")
+    logger.info(s"Partition ${context.getPartitionId} on Error: ${error.toString}")
   }
 
+  /**
+    * Method to ingest and process the events received from the event hub in batches.
+    * @param context
+    * @param messages
+    * @throws java.lang.Exception
+    */
   @throws(classOf[Exception])
   override def onEvents(context: PartitionContext, messages: lang.Iterable[EventData]): Unit = {
 
-    System.out.println("SAMPLE: Partition " + context.getPartitionId + " got message batch")
-    var messageCount = 0
-    import scala.collection.JavaConversions._
-    for (data <- messages) {
-      System.out.println("SAMPLE (" + context.getPartitionId + "," + data.getSystemProperties.getOffset + "," + data.getSystemProperties.getSequenceNumber + "): " + new String(data.getBody, "UTF8"))
-      messageCount += 1
-      this.checkpointBatchingCount += 1
-      if ((checkpointBatchingCount % 5) == 0) {
-        System.out.println("SAMPLE: Partition " + context.getPartitionId + " checkpointing at " + data.getSystemProperties.getOffset + "," + data.getSystemProperties.getSequenceNumber)
-        context.checkpoint(data)
+      logger.info(s"Partition ${context.getPartitionId} got message batch")
+      var lastEventData: EventData = null
+      val messagesList = messages.asScala
+      var eventsList: ListBuffer[Event] = ListBuffer[Event]()
+      for (message: EventData <- messagesList) {
+        logger.info(s"(Partition: ${context.getPartitionId}, offset: ${message.getSystemProperties.getOffset}," +
+          s"SeqNum: ${message.getSystemProperties.getSequenceNumber}) : ${new String(message.getBytes, "UTF-8")}")
+        val msgString = new String(message.getBytes, "UTF-8")
+        if (msgString.contains("uri") && msgString.contains("2017-07-17")) {
+          val event: Event = toEvent(msgString)
+          eventsList += event
+        }
+        lastEventData = message
       }
-    }
-    System.out.println("SAMPLE: Partition " + context.getPartitionId + " batch size was " + messageCount + " for host " + context.getOwner)
-//    println(s"Partition ${context.getPartitionId} got message batch")
-//    var messageCount: Int = 0
-//    val messagesList = messages.asScala
-//    var eventsList: ListBuffer[Event] = ListBuffer[Event]()
-//      for( message: EventData <- messagesList) {
-//      println(s"(Partition: ${context.getPartitionId}, offset: ${message.getSystemProperties.getOffset}," +
-//        s"SeqNum: ${message.getSystemProperties.getSequenceNumber}) : ${new String(message.getBytes, "UTF-8")}")
-////      val event: Event = toEvent(new String(message.getBytes))
-////      eventsList += event
-//    }
+      val parallelListofEvents: ParSeq[Event] = eventsList.par
+      parallelListofEvents.tasksupport = new ForkJoinTaskSupport(
+        new scala.concurrent.forkjoin.ForkJoinPool(1)
+      )
+      parallelListofEvents.foreach(event => {
+        logger.info(s"Start copying for file ${event.getUri}")
+        if (event.getSASToken.contains("2017-07-17")) {
+          val uris = event.getUri.split(";")
+          val primaryUri = uris(0).split("=")(1).trim
+          val secondaryUri = uris(1).split("=")(1).trim
+          val sasUri = primaryUri.substring(1, primaryUri.length - 1) + "?" + event.getSASToken.trim
+          logger.info("SAS URI for the blob is : " + sasUri)
 
-//    val parallelListofEvents : ParSeq[Event] = eventsList.par
-//    // set parallelism....Make it configurable.
-//    parallelListofEvents.tasksupport= new ForkJoinTaskSupport(
-//      new scala.concurrent.forkjoin.ForkJoinPool(5)
-//    )
+          // Method to create and get Aure blob InputStream, blobName and blobSize.
+          def getBlobStream(azureBlockBlob: CloudBlockBlob): (BlobInputStream, String, Long) = {
+            val blobRequestOptions = new BlobRequestOptions()
+            val operationContext = new OperationContext()
+            blobRequestOptions.setConcurrentRequestCount(100)
+            operationContext.setLoggingEnabled(true)
+            azureBlockBlob.downloadAttributes()
+            (azureBlockBlob.openInputStream(), azureBlockBlob.getName, azureBlockBlob.getProperties.getLength)
+          }
 
-    // TODO : for each of the event object read the file from the blob store and upload to s3.
-
-//    eventsList.foreach( event => {
-//      logger.info(s"Start copying for file ${event.getUri}")
-//      val sasUri = event.getUri + event.getSASToken
-//      var data = Array.fill[Byte](5 * 1000000)(0)
-//      println("Event received now going to read the blob related to it.")
-//      val blobInputStream = BlobManager.readBlob(sasUri)
-//      while(blobInputStream. != -1){
-//        println("Read byte array of : "+data.length)
-//        println("Read byte array : "+ data.toString)
-//      }
-//    })
+          BlobManager.withSASUriBlobReference(sasUri, getBlobStream) match {
+            case Failure(e) =>
+              logger.error(s"Unable to get InputStream for ${sasUri}")
+              logger.error(e.getCause.toString)
+            case Success(blobStreamData) => {
+              val blobInputStream = blobStreamData._1
+              val blobName = blobStreamData._2
+              val blobSize = blobStreamData._3
+              val uploadResult = S3Manger.uploadToS3(blobInputStream, s3BucketName, s3FolderName, blobName, blobSize, s3Client)
+              if (uploadResult)
+                logger.info(s"${blobName} transfer to S3 ${s3BucketName} : SUCCESS")
+              else
+                logger.warn(s"${blobName} transfer to S3 ${s3BucketName} : FAILED.") //context.checkpoint(new EventData(event.toJson.getBytes()))
+            }
+          }
+        }
+      })
+      logger.info("Checkpointing with event :  "+ lastEventData.toString)
+      context.checkpoint(lastEventData)
   }
 
 

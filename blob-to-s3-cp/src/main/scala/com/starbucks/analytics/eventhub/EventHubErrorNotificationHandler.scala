@@ -7,7 +7,7 @@ import com.starbucks.analytics.eventhub.EventHubManager.logger
 import com.typesafe.scalalogging.Logger
 
 /**
-  * Created by depatel on 7/10/17.
+  * Error Handler class for errors thrown by Event Processor Host.
   */
 class EventHubErrorNotificationHandler extends Consumer[ExceptionReceivedEventArgs] {
   private val logger = Logger("EventHubProcessorErrorHandler")
