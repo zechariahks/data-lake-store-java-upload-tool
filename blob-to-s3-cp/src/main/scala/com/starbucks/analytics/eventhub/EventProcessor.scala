@@ -75,7 +75,7 @@ class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName:
         logger.info(s"(Partition: ${context.getPartitionId}, offset: ${message.getSystemProperties.getOffset}," +
           s"SeqNum: ${message.getSystemProperties.getSequenceNumber}) : ${new String(message.getBytes, "UTF-8")}")
         val msgString = new String(message.getBytes, "UTF-8")
-        if (msgString.contains("uri") && msgString.contains("2017-07-17")) {
+        if (msgString.contains("uri") && msgString.contains("sharedAccessSignatureToken")) {
           val event: Event = toEvent(msgString)
           eventsList += event
         }
