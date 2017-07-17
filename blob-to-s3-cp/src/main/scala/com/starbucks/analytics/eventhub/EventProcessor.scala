@@ -87,7 +87,6 @@ class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName:
       )
       parallelListofEvents.foreach(event => {
         logger.info(s"Start copying for file ${event.getUri}")
-        if (event.getSASToken.contains("2017-07-17")) {
           val uris = event.getUri.split(";")
           val primaryUri = uris(0).split("=")(1).trim
           val secondaryUri = uris(1).split("=")(1).trim
@@ -119,9 +118,8 @@ class EventProcessor(awsAccessKeyId: String, awsSecretKey: String, s3BucketName:
                 logger.warn(s"${blobName} transfer to S3 ${s3BucketName} : FAILED.") //context.checkpoint(new EventData(event.toJson.getBytes()))
             }
           }
-        }
       })
-      logger.info("Checkpointing with event :  "+ lastEventData.toString)
+      logger.info(s"Checkpointing last received event : ${lastEventData.toString}")
       context.checkpoint(lastEventData)
   }
 
