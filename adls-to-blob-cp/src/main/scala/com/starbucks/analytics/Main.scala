@@ -130,10 +130,21 @@ object Main {
   ): (Boolean, Option[(String, String)]) = {
     var success = false
     var uriAndToken: Option[(String, String)] = None
+
+    var blobFileName = conf.blobStoreRootFolder.getOrElse("")
+    if (blobFileName.startsWith("/"))
+      blobFileName = blobFileName.drop(1)
+    if (blobFileName.endsWith("/"))
+      blobFileName = blobFileName.dropRight(1)
+    if (!sourceFile.startsWith("/"))
+      blobFileName = s"$blobFileName$sourceFile"
+    else
+      blobFileName = s"$blobFileName${sourceFile.drop(1)}"
+
     BlobManager.getBlockBlobReference(
       blobConnectionInfo,
       conf.blobStoreContainerName(),
-      s"${conf.blobStoreRootFolder.getOrElse("")}$sourceFile"
+      blobFileName
     ) match {
         case Failure(exception) => {
           logger.error(s"Error creating block blob $sourceFile" +
@@ -206,9 +217,22 @@ object Main {
     // Set up the source structure that this tool needs to
     // operate on
     var listOfFiles = new mutable.ListBuffer[String]()
-    val sourceFolder: String = conf.sourceFolder.getOrElse("")
+    var sourceFolder: String = conf.sourceFolder.getOrElse("")
+    if (!sourceFolder.startsWith("/")) {
+      sourceFolder = s"/$sourceFolder"
+    }
+    if (sourceFolder.endsWith("/")) {
+      sourceFolder = sourceFolder.dropRight(1)
+    }
+
     if (conf.sourceFile.isSupplied) {
-      listOfFiles += s"$sourceFolder/${conf.sourceFile()}"
+      listOfFiles += {
+        if (conf.sourceFile().startsWith("/")) {
+          s"$sourceFolder${conf.sourceFile()}"
+        } else {
+          s"$sourceFolder/${conf.sourceFile()}"
+        }
+      }
     } else {
       // Based on configuration setup, we should have got
       // a folder if the file is not specified
