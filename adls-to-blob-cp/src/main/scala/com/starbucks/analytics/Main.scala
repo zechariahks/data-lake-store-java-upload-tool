@@ -134,8 +134,11 @@ object Main {
     var blobFileName = conf.blobStoreRootFolder.getOrElse("")
     if (blobFileName.startsWith("/"))
       blobFileName = blobFileName.drop(1)
-    if (blobFileName.endsWith("/"))
-      blobFileName = blobFileName.dropRight(1)
+    if (blobFileName.length > 0) {
+      if (!blobFileName.endsWith("/"))
+        blobFileName += "/"
+    }
+
     if (!sourceFile.startsWith("/"))
       blobFileName = s"$blobFileName$sourceFile"
     else
