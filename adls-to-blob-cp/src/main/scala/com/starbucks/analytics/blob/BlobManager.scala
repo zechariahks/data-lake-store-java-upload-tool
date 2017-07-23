@@ -2,6 +2,7 @@ package com.starbucks.analytics.blob
 
 import java.util
 
+import com.microsoft.azure.keyvault.core.IKey
 import com.microsoft.azure.storage.{CloudStorageAccount, OperationContext}
 import com.microsoft.azure.storage.blob._
 import com.typesafe.scalalogging.Logger
@@ -50,13 +51,16 @@ object BlobManager {
   private def withAzureBlobContainer[R](
     connectionInfo: BlobConnectionInfo,
     containerName:  String,
+    keyVaultKey:    IKey,
     f:              (CloudBlobContainer) => R
   ): Try[R] = {
       def fn(serviceClient: CloudBlobClient): R = {
         val container = serviceClient.getContainerReference(containerName)
+        val blobEncryptionPolicy = new BlobEncryptionPolicy(keyVaultKey, null)
         val blobRequestOptions = new BlobRequestOptions()
         val operationContext = new OperationContext()
         blobRequestOptions.setConcurrentRequestCount(100)
+        blobRequestOptions.setEncryptionPolicy(blobEncryptionPolicy)
         operationContext.setLoggingEnabled(true)
         container.createIfNotExists(
           BlobContainerPublicAccessType.OFF,
@@ -83,6 +87,7 @@ object BlobManager {
   def getBlockBlobReference(
     connectionInfo: BlobConnectionInfo,
     containerName:  String,
+    keyVaultKey:    IKey,
     blobName:       String
   ): Try[CloudBlockBlob] = {
       def fn(container: CloudBlobContainer): CloudBlockBlob = {
@@ -91,6 +96,7 @@ object BlobManager {
     withAzureBlobContainer[CloudBlockBlob](
       connectionInfo,
       containerName,
+      keyVaultKey,
       fn
     )
   }

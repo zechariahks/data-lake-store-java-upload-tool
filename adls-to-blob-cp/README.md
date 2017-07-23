@@ -44,6 +44,7 @@ Options:
       --desiredBufferSize  <arg>          Desired buffer size in megabytes.This
                                           will impact your available network
                                           bandwidth.
+      --keyVaultResourceUri <arg>         Key Vault resource uri
       --desiredParallelism  <arg>         Desired level of parallelism.
                                           This will impact your available network
                                           bandwidth and source system resources
@@ -80,6 +81,7 @@ java -jar adls-to-blob-cp-assembly-0.1.jar\
   --sourceFile xx\
   --blobStoreContainerName xx\
   --blobStoreRootFolder xx\
+  --keyVaultResourceUri xx\
   --tokenExpirationInMinutes 00\
   --eventHubNamespaceName xx\
   --eventHubName xx\

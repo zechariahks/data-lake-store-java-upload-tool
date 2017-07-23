@@ -24,6 +24,7 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
        |  --blobStoreContainerName xx
        |  --blobStoreRootFolder xx
        |  --tokenExpirationInMinutes 00
+       |  --keyVaultResourceUri xx
        |  --eventHubNamespaceName xx
        |  --eventHubName xx
        |  --eventHubSASKeyName xx
@@ -99,6 +100,12 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
     name = "tokenExpirationInMinutes",
     noshort = true,
     descr = "Please specify the token expiration time in minutes",
+    required = true
+  )
+  val keyVaultResourceUri = opt[String](
+    name = "keyVaultResourceUri",
+    noshort = true,
+    descr = "Key Vault resource uri",
     required = true
   )
   val eventHubNamespaceName = opt[String](

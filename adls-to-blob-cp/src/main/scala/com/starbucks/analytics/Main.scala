@@ -5,6 +5,7 @@ import com.microsoft.azure.storage.blob.CloudBlockBlob
 import com.starbucks.analytics.adls.{ADLSConnectionInfo, ADLSManager}
 import com.starbucks.analytics.blob.{BlobConnectionInfo, BlobManager}
 import com.starbucks.analytics.eventhub.{Event, EventHubConnectionInfo, EventHubManager}
+import com.starbucks.analytics.keyvault.{KeyVaultConnectionInfo, KeyVaultManager}
 import com.typesafe.scalalogging.Logger
 
 import scala.collection.mutable
@@ -39,6 +40,11 @@ object Main {
       accountName = conf.blobStoreAccountName(),
       accountKey = conf.blobStoreAccountKey()
     )
+    // Setup Key Vault Connection Information
+    val keyVaultConnectionInfo = KeyVaultConnectionInfo(
+      clientId = conf.spnClientId(),
+      clientKey = conf.spnClientKey()
+    )
     // Setup Event Hub Connection Information
     val eventHubConnectionInfo = EventHubConnectionInfo(
       eventHubNamespaceName = conf.eventHubNamespaceName(),
@@ -71,6 +77,7 @@ object Main {
         val result: (Boolean, Option[(String, String)]) = upload(
           adlsConnectionInfo,
           blobConnectionInfo,
+          keyVaultConnectionInfo,
           conf,
           file
         )
@@ -123,14 +130,16 @@ object Main {
    * @return
    */
   def upload(
-    adlsConnectionInfo: ADLSConnectionInfo,
-    blobConnectionInfo: BlobConnectionInfo,
-    conf:               Conf,
-    sourceFile:         String
+    adlsConnectionInfo:     ADLSConnectionInfo,
+    blobConnectionInfo:     BlobConnectionInfo,
+    keyVaultConnectionInfo: KeyVaultConnectionInfo,
+    conf:                   Conf,
+    sourceFile:             String
   ): (Boolean, Option[(String, String)]) = {
     var success = false
     var uriAndToken: Option[(String, String)] = None
 
+    // Generate the file name
     var blobFileName = conf.blobStoreRootFolder.getOrElse("")
     if (blobFileName.startsWith("/"))
       blobFileName = blobFileName.drop(1)
@@ -144,9 +153,16 @@ object Main {
     else
       blobFileName = s"$blobFileName${sourceFile.drop(1)}"
 
+    // Get the key vault key
+    val keyVaultKey = KeyVaultManager.getKey(
+      keyVaultConnectionInfo,
+      conf.keyVaultResourceUri()
+    )
+
     BlobManager.getBlockBlobReference(
       blobConnectionInfo,
       conf.blobStoreContainerName(),
+      keyVaultKey.get,
       blobFileName
     ) match {
         case Failure(exception) => {

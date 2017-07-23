@@ -26,7 +26,9 @@ libraryDependencies in ThisBuild ++= Seq(
   joda_time,
   azure_data_lake_store_sdk,
   azure_storage_sdk,
-  azure_eventhubs_sdk)
+  azure_eventhubs_sdk,
+  azure_keyvault_sdk,
+  azure_keyvault_extensions_sdk)
 
 resolvers in ThisBuild ++= Seq(
   "snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
