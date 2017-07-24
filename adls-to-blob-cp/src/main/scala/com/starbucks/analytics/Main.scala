@@ -260,7 +260,12 @@ object Main {
         sourceFolder
       ) match {
         case Success(lf) =>
-          lf.foreach(s => listOfFiles += s"$sourceFolder$s")
+          lf.foreach(s => listOfFiles += {
+            if (s.startsWith("/"))
+              s"$sourceFolder$s"
+            else
+              s"$sourceFolder/$s"
+          })
         case Failure(f) =>
           logger.error(s"Getting list of files from $sourceFolder" +
             s" in Azure Data Lake Store ${adlsConnectionInfo.accountFQDN}" +
