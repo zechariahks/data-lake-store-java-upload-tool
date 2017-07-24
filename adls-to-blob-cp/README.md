@@ -18,6 +18,11 @@ time to live attached to the token.
 - Azure Blob Storage account.
 - An Active Directory Application. Follow the instructions at [Create an Active Directory Application](https://docs.microsoft.com/en-us/azure/data-lake-store/data-lake-store-authenticate-using-active-directory#create-an-active-directory-application)
 
+__PLEASE NOTE__: You need to install additional jar's that you download from Oracle. The jar's have to be copied to the jre/lib/security folder (as an example
+jdk1.8.0_112.jdk/Contents/Home/jre/lib/security). The reason is explained in the following blog posts:
+- https://stackoverflow.com/questions/6481627/java-security-illegal-key-size-or-default-parameters
+- https://stackoverflow.com/questions/23884990/include-local-policy-and-us-export-policy-jce-unlimited-strength 
+
 #How to use
 
 ##Building 

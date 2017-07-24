@@ -1,7 +1,8 @@
 package com.starbucks.analytics
 
 import com.microsoft.azure.datalake.store.ADLFileInputStream
-import com.microsoft.azure.storage.blob.CloudBlockBlob
+import com.microsoft.azure.storage.{AccessCondition, OperationContext}
+import com.microsoft.azure.storage.blob.{BlobEncryptionPolicy, BlobRequestOptions, CloudBlockBlob}
 import com.starbucks.analytics.adls.{ADLSConnectionInfo, ADLSManager}
 import com.starbucks.analytics.blob.{BlobConnectionInfo, BlobManager}
 import com.starbucks.analytics.eventhub.{Event, EventHubConnectionInfo, EventHubManager}
@@ -162,7 +163,6 @@ object Main {
     BlobManager.getBlockBlobReference(
       blobConnectionInfo,
       conf.blobStoreContainerName(),
-      keyVaultKey.get,
       blobFileName
     ) match {
         case Failure(exception) => {
@@ -174,14 +174,19 @@ object Main {
         }
         case Success(blockBlobReference: CloudBlockBlob) => {
             def fn(stream: ADLFileInputStream) = {
-              var data = Array.fill[Byte](conf.desiredBufferSize() * 1000000)(0)
-              while (stream.read(data) != -1) {
-                blockBlobReference.uploadFromByteArray(
-                  data,
-                  0,
-                  data.length
-                )
-              }
+              val blobEncryptionPolicy = new BlobEncryptionPolicy(keyVaultKey.get, null)
+              val blobRequestOptions = new BlobRequestOptions()
+              val operationContext = new OperationContext()
+              blobRequestOptions.setConcurrentRequestCount(100)
+              blobRequestOptions.setEncryptionPolicy(blobEncryptionPolicy)
+              operationContext.setLoggingEnabled(true)
+              blockBlobReference.upload(
+                stream,
+                -1,
+                null,
+                blobRequestOptions,
+                operationContext
+              )
             }
           ADLSManager.withAzureDataLakeStoreFileStream[Boolean](
             adlsConnectionInfo,
