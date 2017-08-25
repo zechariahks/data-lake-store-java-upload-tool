@@ -112,6 +112,7 @@ object ADLSManager {
       adlStoreClient.enumerateDirectory(path)
         .asScala
         .filter(di => di.`type` == DirectoryEntryType.FILE)
+        .filter(di => di.name.substring((di.name).length() - 5) != ".DONE")
         .map(di => di.name)
         .toList
     }
@@ -215,5 +216,43 @@ object ADLSManager {
       connectionInfo,
       fn
     )
+  }
+
+  /**
+   * Renames the file in the specified by adding the specified extension.
+   * Azure Data Lake path
+   *
+   * @param connectionInfo Azure Data Lake Store Connection Information
+   * @param path Path to the file
+   * @param extension to add to the filename, include the period (.)
+   */
+  def renameFile(
+    connectionInfo: ADLSConnectionInfo,
+    path:           String,
+    extension:      String
+  ): Try[Boolean] = {
+    def fn(adlStoreClient: ADLStoreClient): Boolean = {
+      adlStoreClient.rename(path, path + extension, true)
+    }
+    checkIfPathExists(connectionInfo, path) match {
+      case Success(exists) =>
+        if (exists) {
+          logger.info(s"Renaming the file $path" +
+            s" in Azure Data Lake Store ${connectionInfo.accountFQDN}")
+          withAzureDataLakeStoreClient(
+            connectionInfo,
+            fn
+          )
+        } else {
+          logger.info(s"File $path does not exist" +
+            s" in Azure Data Lake Store ${connectionInfo.accountFQDN}")
+          Try(false)
+        }
+      case Failure(f) =>
+        logger.error(s"Renaming file $path" +
+          s" in Azure Data Lake Store ${connectionInfo.accountFQDN}" +
+          s" failed with exception $f")
+        Try(false)
+    }
   }
 }
